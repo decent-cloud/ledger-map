@@ -27,7 +27,7 @@ serde = { version = "1.0.203", features = ["derive"] }
 sha2 = "0.10.8"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-clap = "4.5.4"
+clap = "4.5.8"
 fs-err = "2.11.0"
 log = "0.4.21"
 dirs = "5.0.1"
