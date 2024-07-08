@@ -74,7 +74,7 @@ pub mod ledger_entry;
 pub mod partition_table;
 
 use crate::platform_specific::{
-    persistent_storage_read64, persistent_storage_size_bytes, persistent_storage_write64,
+    persistent_storage_read, persistent_storage_size_bytes, persistent_storage_write,
 };
 #[cfg(target_arch = "x86_64")]
 pub use platform_specific::override_backing_file;
@@ -513,11 +513,11 @@ impl LedgerMap {
         let block_len_bytes: u32 = serialized_data.len() as u32;
         let serialized_data_len = block_len_bytes.to_le_bytes();
 
-        persistent_storage_write64(
+        persistent_storage_write(
             self.metadata.borrow().next_block_write_position(),
             &serialized_data_len,
         );
-        persistent_storage_write64(
+        persistent_storage_write(
             self.metadata.borrow().next_block_write_position() + serialized_data_len.len() as u64,
             &serialized_data,
         );
@@ -536,7 +536,7 @@ impl LedgerMap {
     fn _journal_read_block(&self, offset: u64) -> Result<LedgerBlock, LedgerError> {
         // Find out how many bytes we need to read ==> block len in bytes
         let mut buf = [0u8; std::mem::size_of::<u32>()];
-        persistent_storage_read64(offset, &mut buf)
+        persistent_storage_read(offset, &mut buf)
             .map_err(|e| LedgerError::BlockCorrupted(e.to_string()))?;
         let block_len: u32 = u32::from_le_bytes(buf);
         // debug!("offset 0x{:0x} read bytes: {:?}", offset, buf);
@@ -553,7 +553,7 @@ impl LedgerMap {
 
         // Read the block as raw bytes
         let mut buf = vec![0u8; block_len as usize];
-        persistent_storage_read64(offset + std::mem::size_of::<u32>() as u64, &mut buf)
+        persistent_storage_read(offset + std::mem::size_of::<u32>() as u64, &mut buf)
             .map_err(|e| LedgerError::Other(e.to_string()))?;
         match LedgerBlock::deserialize(&mut buf.as_ref())
             .map_err(|err| LedgerError::BlockCorrupted(err.to_string()))

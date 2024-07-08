@@ -60,32 +60,32 @@ pub fn export_error() -> Vec<LogEntry> {
 pub const PERSISTENT_STORAGE_PAGE_SIZE: u64 = 64 * 1024;
 
 pub fn persistent_storage_size_bytes() -> u64 {
-    ic_cdk::api::stable::stable64_size() * PERSISTENT_STORAGE_PAGE_SIZE
+    ic_cdk::api::stable::stable_size() * PERSISTENT_STORAGE_PAGE_SIZE
 }
 
-pub fn persistent_storage_read64(offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
-    ic_cdk::api::stable::stable64_read(offset, buf);
+pub fn persistent_storage_read(offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
+    ic_cdk::api::stable::stable_read(offset, buf);
     Ok(())
 }
 
-pub fn persistent_storage_write64(offset: u64, buf: &[u8]) {
+pub fn persistent_storage_write(offset: u64, buf: &[u8]) {
     let stable_memory_size_bytes = persistent_storage_size_bytes();
     if stable_memory_size_bytes < offset + buf.len() as u64 {
         let stable_memory_bytes_new = offset + (buf.len() as u64).max(PERSISTENT_STORAGE_PAGE_SIZE);
-        persistent_storage_grow64(
+        persistent_storage_grow(
             (stable_memory_bytes_new - stable_memory_size_bytes) / PERSISTENT_STORAGE_PAGE_SIZE + 1,
         )
         .unwrap();
     }
-    ic_cdk::api::stable::stable64_write(offset, buf)
+    ic_cdk::api::stable::stable_write(offset, buf)
 }
 
-pub fn persistent_storage_grow64(additional_pages: u64) -> Result<u64, String> {
+pub fn persistent_storage_grow(additional_pages: u64) -> Result<u64, String> {
     info!(
-        "persistent_storage_grow64: {} additional_pages.",
+        "persistent_storage_grow: {} additional_pages.",
         additional_pages
     );
-    ic_cdk::api::stable::stable64_grow(additional_pages).map_err(|err| format!("{:?}", err))
+    ic_cdk::api::stable::stable_grow(additional_pages).map_err(|err| format!("{:?}", err))
 }
 
 pub(crate) fn get_timestamp_nanos() -> u64 {

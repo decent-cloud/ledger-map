@@ -64,7 +64,7 @@ pub fn persistent_storage_size_bytes() -> u64 {
     })
 }
 
-pub fn persistent_storage_read64(offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
+pub fn persistent_storage_read(offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
     BACKING_FILE.with(
         |backing_file| match backing_file.borrow_mut().file.as_mut() {
             Some(file) => {
@@ -92,7 +92,7 @@ pub fn persistent_storage_read64(offset: u64, buf: &mut [u8]) -> anyhow::Result<
     )
 }
 
-pub fn persistent_storage_write64(offset: u64, buf: &[u8]) {
+pub fn persistent_storage_write(offset: u64, buf: &[u8]) {
     BACKING_FILE.with(
         |backing_file| match backing_file.borrow_mut().file.as_mut() {
             Some(file) => {
@@ -128,7 +128,7 @@ pub fn persistent_storage_write64(offset: u64, buf: &[u8]) {
     )
 }
 
-pub fn persistent_storage_grow64(additional_pages: u64) -> Result<u64, String> {
+pub fn persistent_storage_grow(additional_pages: u64) -> Result<u64, String> {
     BACKING_FILE.with(|backing_file| match &backing_file.borrow_mut().file {
         Some(file) => {
             let previous_size_bytes = file.metadata().map_err(|err| err.to_string())?.len();

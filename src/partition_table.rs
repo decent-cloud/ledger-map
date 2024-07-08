@@ -2,8 +2,8 @@
 use ic_cdk::println;
 
 use crate::platform_specific::{
-    persistent_storage_grow64, persistent_storage_read64, persistent_storage_size_bytes,
-    persistent_storage_write64, PERSISTENT_STORAGE_PAGE_SIZE,
+    persistent_storage_grow, persistent_storage_read, persistent_storage_size_bytes,
+    persistent_storage_write, PERSISTENT_STORAGE_PAGE_SIZE,
 };
 use crate::{debug, info, warn};
 use serde::ser::{SerializeStruct, Serializer};
@@ -207,7 +207,7 @@ impl PartitionTable {
 
         let mut buf = vec![0; Self::size()];
 
-        persistent_storage_read64(PARTITION_TABLE_START_OFFSET, buf.as_mut_slice())?;
+        persistent_storage_read(PARTITION_TABLE_START_OFFSET, buf.as_mut_slice())?;
         debug!(
             "Read {} bytes of partition table from persistent storage @ {}",
             buf.len(),
@@ -252,7 +252,7 @@ impl PartitionTable {
             entry_slice.copy_from_slice(&self.entries[i].to_bytes());
         }
 
-        persistent_storage_write64(PARTITION_TABLE_START_OFFSET, buf.as_slice());
+        persistent_storage_write(PARTITION_TABLE_START_OFFSET, buf.as_slice());
         info!(
             "Wrote {} bytes of partition table to persistent storage at LBA {}",
             buf.len(),
@@ -281,7 +281,7 @@ impl PartitionTable {
             PARTITION_TABLE_START_OFFSET + Self::size() as u64,
         );
         if new_pages > 0 {
-            persistent_storage_grow64(new_pages)?;
+            persistent_storage_grow(new_pages)?;
             let persistent_storage_bytes_after = persistent_storage_size_bytes();
             info!(
                 "persistent storage resized to bytes: {}",
