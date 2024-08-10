@@ -24,13 +24,12 @@
 //! ```rust
 //! use ledger_map::{LedgerMap};
 //!
-//! // Optional: Override the backing file path
-//! // use std::path::PathBuf;
-//! // let ledger_path = PathBuf::from("/tmp/ledger_map/test_data.bin");
-//! // ledger_map::platform_specific::override_backing_file(Some(ledger_path));
+//! // Optional: Use custom file path for the persistent storage
+//! let ledger_path = None;
+//! // let ledger_path = Some(std::path::PathBuf::from("/tmp/ledger_map/test_data.bin"));
 //!
 //! // Create a new LedgerMap instance
-//! let mut ledger_map = LedgerMap::new(None).expect("Failed to create LedgerMap");
+//! let mut ledger_map = LedgerMap::new_with_path(None, ledger_path).expect("Failed to create LedgerMap");
 //!
 //! // Insert a few new entries, each with a separate label
 //! ledger_map.upsert("Label1", b"key1".to_vec(), b"value1".to_vec()).unwrap();
@@ -76,8 +75,6 @@ pub mod partition_table;
 use crate::platform_specific::{
     persistent_storage_read, persistent_storage_size_bytes, persistent_storage_write,
 };
-#[cfg(target_arch = "x86_64")]
-pub use platform_specific::override_backing_file;
 pub use platform_specific::{export_debug, export_error, export_info, export_warn};
 
 use borsh::{to_vec, BorshDeserialize, BorshSerialize};
@@ -207,6 +204,15 @@ impl LedgerMap {
         };
         result.refresh_ledger()?;
         Ok(result)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn new_with_path(
+        labels_to_index: Option<Vec<String>>,
+        path: Option<std::path::PathBuf>,
+    ) -> anyhow::Result<Self> {
+        platform_specific::set_backing_file(path).map_err(|e| anyhow::format_err!("{:?}", e))?;
+        Self::new(labels_to_index)
     }
 
     #[cfg(test)]
@@ -646,14 +652,12 @@ mod tests {
             .unwrap()
             .into_path()
             .join("test_ledger_store.bin");
-        platform_specific::override_backing_file(Some(file_path));
-        partition_table::persist();
 
         fn mock_get_timestamp_nanos() -> u64 {
             0
         }
 
-        LedgerMap::new(labels_to_index)
+        LedgerMap::new_with_path(labels_to_index, Some(file_path))
             .expect("Failed to create a temp ledger for the test")
             .with_timestamp_fn(mock_get_timestamp_nanos)
     }

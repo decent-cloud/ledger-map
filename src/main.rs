@@ -2,7 +2,7 @@
 ///
 /// The CLI allows various ledger operations, such as listing, inserting/updating (upserting), and deleting entries.
 ///
-use ledger_map::{platform_specific, LedgerMap};
+use ledger_map::LedgerMap;
 
 use clap::{arg, Arg, Command};
 use std::path::PathBuf;
@@ -78,8 +78,8 @@ fn main() -> anyhow::Result<()> {
     // Extract the file path from the parsed arguments
     let ledger_path = args.path.as_ref().map(|p| PathBuf::from_str(p).unwrap());
 
-    platform_specific::override_backing_file(ledger_path);
-    let mut ledger_map = LedgerMap::new(None).expect("Failed to create ledger");
+    let mut ledger_map =
+        LedgerMap::new_with_path(None, ledger_path).expect("Failed to create ledger");
 
     if args.list {
         println!("Listing entries:");
