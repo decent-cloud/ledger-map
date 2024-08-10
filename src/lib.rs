@@ -1,16 +1,16 @@
 //! This module implements a key-value storage system called LedgerMap.
 //!
 //! The LedgerMap struct provides methods for inserting, deleting, and retrieving key-value entries.
-//! It journals the entries in a binary file. Each entry is appended to the file along with its
-//! length, allowing efficient retrieval and updates.
+//! It journals the entries in a binary file on x86-64 systems or in stable memory in the
+//! Internet Computer canister. Each entry is appended to the file along with its length,
+//! allowing efficient retrieval and updates.
 //!
-//! The LedgerMap struct maintains an in-memory index of the entries for quick lookups. It uses a HashMap
+//! The LedgerMap struct maintains an in-memory index of the entries for quick lookups. It uses a HashMap (IndexMap)
 //! to store the entries, where the key is an enum value representing the label of the entry, and the value
 //! is an IndexMap of key-value pairs.
 //!
-//! The LedgerMap struct also maintains a metadata file that keeps track of the number of entries, the last offset,
-//! and the parent hash of the entries. The parent hash is used to compute the cumulative hash of each entry,
-//! ensuring data integrity.
+//! The LedgerMap struct also maintains metadata to keep track of the number of entries, the last offset
+//! in the persistent storage, and the chain (a.k.a root) hash of the ledger.
 //!
 //! The LedgerMap struct provides methods for inserting and deleting entries, as well as iterating over the entries
 //! by label or in raw form. It also supports re-reading the in-memory index and metadata from the binary file.
@@ -94,7 +94,7 @@ pub type AHashSet<K> = HashSet<K, BuildHasherDefault<ahash::AHasher>>;
 pub struct MetadataV1 {
     /// The number of blocks in the ledger so far.
     num_blocks: usize,
-    /// The chain hash of the entire ledger, to be used as the initial hash of the next block.
+    /// The chain hash of the entire ledger.
     last_block_chain_hash: Vec<u8>,
     /// The timestamp of the last block
     last_block_timestamp_ns: u64,
@@ -155,16 +155,16 @@ impl Metadata {
         }
     }
 
-    pub fn append_block(
+    pub fn update_from_appended_block(
         &mut self,
-        parent_hash: &[u8],
+        new_chain_hash: &[u8],
         block_timestamp_ns: u64,
         next_block_write_position: u64,
     ) {
         match self {
             Metadata::V1(metadata) => {
                 metadata.num_blocks += 1;
-                metadata.last_block_chain_hash = parent_hash.to_vec();
+                metadata.last_block_chain_hash = new_chain_hash.to_vec();
                 metadata.last_block_timestamp_ns = block_timestamp_ns;
                 metadata.next_block_write_position = next_block_write_position;
             }
@@ -250,17 +250,14 @@ impl LedgerMap {
                 }
             }
             let block_timestamp = (self.current_timestamp_nanos)();
-            let hash = Self::_compute_block_chain_hash(
-                self.metadata.borrow().get_last_block_chain_hash(),
-                &block_entries,
-                block_timestamp,
-            )?;
+            let parent_hash = self.metadata.borrow().get_last_block_chain_hash().to_vec();
+            let write_offset = self.metadata.borrow().next_block_write_position();
             let block = LedgerBlock::new(
                 block_entries,
-                self.metadata.borrow().next_block_write_position(),
+                write_offset,
                 None,
                 block_timestamp,
-                hash,
+                parent_hash,
             );
             self._journal_append_block(block)?;
             self.next_block_entries.clear();
@@ -331,33 +328,32 @@ impl LedgerMap {
             return Ok(());
         }
 
-        let mut parent_hash = Vec::new();
+        let mut expected_parent_hash = Vec::new();
         let mut updates = Vec::new();
         // Step 1: Read all Ledger Blocks
         for ledger_block in self.iter_raw() {
             let ledger_block = ledger_block?;
 
-            let expected_hash = Self::_compute_block_chain_hash(
-                &parent_hash,
-                ledger_block.entries(),
-                ledger_block.timestamp(),
-            )?;
-            if ledger_block.hash() != expected_hash {
+            if ledger_block.parent_hash() != expected_parent_hash {
                 return Err(anyhow::format_err!(
-                    "Hash mismatch: expected {:?}, got {:?}",
-                    expected_hash,
-                    ledger_block.hash()
+                    "Hash mismatch: expected parent hash {:?}, got {:?}",
+                    expected_parent_hash,
+                    ledger_block.parent_hash()
                 ));
             };
 
-            parent_hash.clear();
-            parent_hash.extend_from_slice(ledger_block.hash());
+            let new_chain_hash = Self::_compute_block_chain_hash(
+                ledger_block.parent_hash(),
+                ledger_block.entries(),
+                ledger_block.timestamp(),
+            )?;
 
-            self.metadata.borrow_mut().append_block(
-                parent_hash.as_slice(),
+            self.metadata.borrow_mut().update_from_appended_block(
+                &new_chain_hash,
                 ledger_block.timestamp(),
                 ledger_block.offset_next().expect("offset must be set"),
             );
+            expected_parent_hash = new_chain_hash;
 
             updates.push(ledger_block);
         }
@@ -487,12 +483,12 @@ impl LedgerMap {
     }
 
     fn _compute_block_chain_hash(
-        last_block_chain_hash: &[u8],
+        parent_block_hash: &[u8],
         block_entries: &[LedgerEntry],
         block_timestamp: u64,
     ) -> anyhow::Result<Vec<u8>> {
         let mut hasher = Sha256::new();
-        hasher.update(last_block_chain_hash);
+        hasher.update(parent_block_hash);
         for entry in block_entries.iter() {
             hasher.update(to_vec(entry)?);
         }
@@ -522,11 +518,16 @@ impl LedgerMap {
             &serialized_data,
         );
 
+        let new_chain_hash = Self::_compute_block_chain_hash(
+            ledger_block.parent_hash(),
+            ledger_block.entries(),
+            ledger_block.timestamp(),
+        )?;
         let next_write_position = self.metadata.borrow().next_block_write_position()
             + serialized_data_len.len() as u64
             + serialized_data.len() as u64;
-        self.metadata.borrow_mut().append_block(
-            ledger_block.hash(),
+        self.metadata.borrow_mut().update_from_appended_block(
+            &new_chain_hash,
             ledger_block.timestamp(),
             next_write_position,
         );
@@ -911,10 +912,6 @@ mod tests {
             .upsert("Label2", key.clone(), value.clone())
             .unwrap();
         assert!(ledger_map.commit_block().is_ok());
-        let expected_parent_hash = vec![
-            245, 142, 15, 179, 87, 133, 107, 164, 123, 16, 145, 52, 243, 153, 170, 45, 177, 243,
-            61, 37, 162, 237, 226, 100, 94, 136, 159, 73, 117, 58, 222, 153,
-        ];
         ledger_map.refresh_ledger().unwrap();
 
         let entry = ledger_map
@@ -929,12 +926,14 @@ mod tests {
             entry,
             LedgerEntry::new("Label2", key.clone(), value.clone(), Operation::Upsert)
         );
+        let expected_chain_hash = vec![
+            245, 142, 15, 179, 87, 133, 107, 164, 123, 16, 145, 52, 243, 153, 170, 45, 177, 243,
+            61, 37, 162, 237, 226, 100, 94, 136, 159, 73, 117, 58, 222, 153,
+        ];
         assert_eq!(
             ledger_map.metadata.borrow().last_block_chain_hash(),
-            expected_parent_hash
+            expected_chain_hash
         );
-
-        // get_latest_hash should return the parent hash
-        assert_eq!(ledger_map.get_latest_block_hash(), expected_parent_hash);
+        assert_eq!(ledger_map.get_latest_block_hash(), expected_chain_hash);
     }
 }

@@ -86,7 +86,7 @@ pub struct LedgerBlockV1 {
     offset: u64,
     offset_next: Option<u64>,
     timestamp: u64,
-    hash: Vec<u8>,
+    parent_hash: Vec<u8>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq, Eq, Debug)]
@@ -100,14 +100,14 @@ impl LedgerBlock {
         offset: u64,
         offset_next: Option<u64>,
         timestamp: u64,
-        hash: Vec<u8>,
+        parent_hash: Vec<u8>,
     ) -> Self {
         LedgerBlock::V1(LedgerBlockV1 {
             entries,
             offset,
             offset_next,
             timestamp,
-            hash,
+            parent_hash,
         })
     }
 
@@ -141,9 +141,9 @@ impl LedgerBlock {
         }
     }
 
-    pub fn hash(&self) -> &[u8] {
+    pub fn parent_hash(&self) -> &[u8] {
         match self {
-            LedgerBlock::V1(block) => &block.hash,
+            LedgerBlock::V1(block) => &block.parent_hash,
         }
     }
 }
@@ -152,11 +152,11 @@ impl std::fmt::Display for LedgerBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "[{}] ~-=-~-=-~-=-~ Ledger block at offsets 0x{:x} .. {:x?} hash {}",
+            "[{}] ~-=-~-=-~-=-~ Ledger block at offsets 0x{:x} .. {:x?} parent_hash {}",
             self.timestamp(),
             self.offset(),
             self.offset_next(),
-            hex::encode(self.hash())
+            hex::encode(self.parent_hash())
         )?;
         for entry in self.entries() {
             write!(f, "\n[{}] {}", self.timestamp(), entry)?

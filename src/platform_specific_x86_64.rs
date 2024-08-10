@@ -28,7 +28,7 @@ impl BackingFile {
             Some(path) => path.join("ledger-map").join("data.bin"),
             None => PathBuf::from("data.bin"),
         });
-        info!("Using persistent storage: {:?}", file_path);
+        println!("Using persistent storage: {:?}", file_path);
         fs::create_dir_all(file_path.parent().expect("Could not find parent directory")).unwrap();
         self.file = Some(
             OpenOptions::new()
