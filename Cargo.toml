@@ -23,11 +23,11 @@ borsh = { version = "1.5.1", features = ["derive"] }
 hex = "0.4.3"
 indexmap = "2.3.0"
 lazy_static = "1.5.0"
-serde = { version = "1.0.204", features = ["derive"] }
+serde = { version = "1.0.205", features = ["derive"] }
 sha2 = "0.10.8"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-clap = "4.5.13"
+clap = "4.5.15"
 fs-err = "2.11.0"
 log = "0.4.22"
 dirs = "5.0.1"
@@ -39,4 +39,4 @@ ic-cdk-timers = "0.9.0"
 ic-canister-log = "0.2.0"
 
 [dev-dependencies]
-tempfile = "3.11.0"
+tempfile = "3.12.0"
