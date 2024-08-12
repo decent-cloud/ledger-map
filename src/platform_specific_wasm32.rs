@@ -63,7 +63,7 @@ pub fn persistent_storage_size_bytes() -> u64 {
     ic_cdk::api::stable::stable_size() * PERSISTENT_STORAGE_PAGE_SIZE
 }
 
-pub fn persistent_storage_read(offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
+pub fn persistent_storage_read(offset: u64, buf: &mut [u8]) -> Result<(), String> {
     ic_cdk::api::stable::stable_read(offset, buf);
     Ok(())
 }
