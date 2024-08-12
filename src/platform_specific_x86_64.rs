@@ -17,7 +17,7 @@ pub struct BackingFile {
 
 impl BackingFile {
     pub fn new(file_path: Option<PathBuf>) -> Result<Self, String> {
-        let file_path = file_path.unwrap_or_else(|| default_file_path());
+        let file_path = file_path.unwrap_or_else(default_file_path);
         fs_err::create_dir_all(file_path.parent().expect("Could not find parent directory"))
             .map_err(|e| format!("{:?}", e))?;
 
@@ -47,9 +47,7 @@ impl BackingFile {
         );
 
         if offset + buf.len() as u64 > file_size_bytes {
-            return Err(format!(
-                "Failed to read from persistent storage: read beyond end of file."
-            ));
+            return Err("Failed to read from persistent storage: read beyond end of file.".to_string());
         }
 
         self.file
@@ -135,7 +133,7 @@ fn default_file_path() -> PathBuf {
 }
 
 thread_local! {
-    pub static BACKING_FILE: RefCell<Option<BackingFile>> = RefCell::new(None);
+    pub static BACKING_FILE: RefCell<Option<BackingFile>> = const { RefCell::new(None) };
 }
 
 pub fn set_backing_file(file_path: Option<PathBuf>) -> Result<(), String> {

@@ -19,6 +19,12 @@ pub struct PartitionTableHeader {
     pub magic_bytes: [u8; 8],
 }
 
+impl Default for PartitionTableHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PartitionTableHeader {
     pub fn new() -> Self {
         PartitionTableHeader {
@@ -127,6 +133,12 @@ pub struct PartitionTable {
     pub entries: Vec<PartitionTableEntry>,
 }
 
+impl Default for PartitionTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PartitionTable {
     pub fn new() -> Self {
         PartitionTable {
@@ -148,7 +160,7 @@ impl PartitionTable {
         Self::ensure_enough_persistent_storage_allocated()?;
 
         if persistent_storage_size_bytes() < Self::required_size_bytes() {
-            return Err(format!("Not enough persistent storage allocated"));
+            return Err("Not enough persistent storage allocated".to_string());
         }
 
         debug!(
@@ -186,7 +198,7 @@ impl PartitionTable {
 
     pub fn persist(&self) -> Result<(), String> {
         if self.num_entries == 0 {
-            return Err(format!("Partition table is empty"));
+            return Err("Partition table is empty".to_string());
         }
         Self::ensure_enough_persistent_storage_allocated()?;
 
@@ -208,7 +220,7 @@ impl PartitionTable {
 
     pub fn add_new_entry(&mut self, entry: PartitionTableEntry) -> Result<(), String> {
         if self.num_entries as usize >= PARTITION_TABLE_MAX_ENTRIES {
-            return Err(format!("Partition table full"));
+            return Err("Partition table full".to_string());
         }
         self.entries.push(entry);
         self.num_entries += 1;

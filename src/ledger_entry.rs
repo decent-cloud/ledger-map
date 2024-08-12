@@ -172,7 +172,7 @@ mod tests {
     pub fn create_dummy_ledger_entry(seed: u64) -> LedgerEntry {
         let key = seed.to_le_bytes().to_vec();
         let value = (seed + 1).to_le_bytes().to_vec();
-        LedgerEntry::new("test_label", &key, value, Operation::Upsert)
+        LedgerEntry::new("test_label", key, value, Operation::Upsert)
     }
 
     #[test]
