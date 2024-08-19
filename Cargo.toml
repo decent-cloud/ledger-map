@@ -21,7 +21,7 @@ ahash = { version = "0.8.11", default-features = false, features = [
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 borsh = { version = "1.5.1", features = ["derive"] }
 hex = "0.4.3"
-indexmap = "2.3.0"
+indexmap = "2.4.0"
 lazy_static = "1.5.0"
 serde = { version = "1.0.207", features = ["derive"] }
 sha2 = "0.10.8"
