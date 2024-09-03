@@ -1,6 +1,9 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use borsh::{BorshDeserialize, BorshSerialize};
+use flate2::write::ZlibEncoder;
+use flate2::{read::ZlibDecoder, Compression};
+use std::io;
 
 /// Enum defining the different operations that can be performed on entries.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -109,6 +112,18 @@ impl LedgerBlock {
             timestamp,
             parent_hash,
         })
+    }
+
+    pub fn serialize(&self) -> io::Result<Vec<u8>> {
+        let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
+        borsh::to_writer(&mut e, self)?;
+        e.finish()
+    }
+
+    pub fn deserialize(data: &[u8]) -> anyhow::Result<Self> {
+        let mut e = ZlibDecoder::new(data);
+        let v = borsh::de::from_reader(&mut e)?;
+        Ok(v)
     }
 
     pub fn entries(&self) -> &[LedgerEntry] {

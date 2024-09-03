@@ -562,7 +562,7 @@ impl LedgerMap {
         let mut buf = vec![0u8; block_len as usize];
         persistent_storage_read(offset + std::mem::size_of::<u32>() as u64, &mut buf)
             .map_err(|e| LedgerError::Other(e.to_string()))?;
-        match LedgerBlock::deserialize(&mut buf.as_ref())
+        match LedgerBlock::deserialize(buf.as_ref())
             .map_err(|err| LedgerError::BlockCorrupted(err.to_string()))
         {
             Ok(mut block) => {
