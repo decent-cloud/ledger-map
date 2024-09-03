@@ -269,7 +269,7 @@ impl LedgerMap {
                 block_timestamp,
                 parent_hash,
             );
-            self._journal_append_block(block)?;
+            self._persist_block(block)?;
             self.next_block_entries.clear();
         }
         Ok(())
@@ -451,7 +451,7 @@ impl LedgerMap {
     pub fn iter_raw(&self) -> impl Iterator<Item = anyhow::Result<LedgerBlock>> + '_ {
         let data_start = partition_table::get_data_partition().start_lba;
         (0..).scan(data_start, |state, _| {
-            let ledger_block = match self._journal_read_block(*state) {
+            let ledger_block = match self._persisted_block_read(*state) {
                 Ok(block) => block,
                 Err(LedgerError::BlockEmpty) => return None,
                 Err(LedgerError::BlockCorrupted(err)) => {
@@ -506,9 +506,9 @@ impl LedgerMap {
         Ok(hasher.finalize().to_vec())
     }
 
-    fn _journal_append_block(&self, ledger_block: LedgerBlock) -> anyhow::Result<()> {
+    fn _persist_block(&self, ledger_block: LedgerBlock) -> anyhow::Result<()> {
         // Prepare entry as serialized bytes
-        let serialized_data = to_vec(&ledger_block)?;
+        let serialized_data = ledger_block.serialize()?;
         info!(
             "Appending block @timestamp {} with {} bytes: {}",
             ledger_block.timestamp(),
@@ -544,7 +544,7 @@ impl LedgerMap {
         Ok(())
     }
 
-    fn _journal_read_block(&self, offset: u64) -> Result<LedgerBlock, LedgerError> {
+    fn _persisted_block_read(&self, offset: u64) -> Result<LedgerBlock, LedgerError> {
         // Find out how many bytes we need to read ==> block len in bytes
         let mut buf = [0u8; std::mem::size_of::<u32>()];
         persistent_storage_read(offset, &mut buf)
