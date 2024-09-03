@@ -23,6 +23,10 @@
 //!
 //! ```rust
 //! use ledger_map::{LedgerMap};
+//! use env_logger::Env;
+//!
+//! // Set log level to info by default
+//! env_logger::try_init_from_env(Env::default().default_filter_or("info")).unwrap();
 //!
 //! // Optional: Use custom file path for the persistent storage
 //! let ledger_path = None;
