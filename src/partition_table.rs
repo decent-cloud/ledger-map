@@ -288,7 +288,6 @@ pub fn get_partition_table() -> PartitionTable {
 
 pub fn get_data_partition() -> PartitionTableEntry {
     let table = get_partition_table();
-    println!("{}", table);
     *table
         .entries
         .get(PART_DATA)
