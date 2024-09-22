@@ -14,7 +14,7 @@ Add LedgerMap to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ledger-map = "0.3.0"
+ledger-map = "0.4.0"
 ```
 
 ## Usage
