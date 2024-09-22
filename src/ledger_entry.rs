@@ -1,3 +1,4 @@
+use crate::LedgerError;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -83,11 +84,101 @@ impl std::fmt::Display for LedgerEntry {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct LedgerBlockHeaderV1 {
+    block_version: u32,
+    jump_bytes_prev: i32,
+    jump_bytes_next: u32,
+    reserved: u32,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LedgerBlockHeader {
+    V1(LedgerBlockHeaderV1),
+}
+
+impl LedgerBlockHeader {
+    pub fn new(jump_bytes_prev: i32, jump_bytes_next: u32) -> Self {
+        LedgerBlockHeader::V1(LedgerBlockHeaderV1 {
+            block_version: 1,
+            jump_bytes_prev,
+            jump_bytes_next,
+            reserved: 0,
+        })
+    }
+
+    pub const fn sizeof() -> usize {
+        size_of::<LedgerBlockHeaderV1>()
+    }
+
+    pub fn jump_bytes_prev_block(&self) -> i32 {
+        match self {
+            LedgerBlockHeader::V1(header) => header.jump_bytes_prev,
+        }
+    }
+
+    pub fn jump_bytes_next_block(&self) -> u32 {
+        match self {
+            LedgerBlockHeader::V1(header) => header.jump_bytes_next,
+        }
+    }
+
+    /// Block header is always serialized to 4x 32-bit integers
+    pub fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+        match self {
+            LedgerBlockHeader::V1(header) => {
+                let mut bytes = [0u8; 16];
+                // Copy each field to the "bytes" array, using LE byte order
+                bytes[0..4].copy_from_slice(&header.block_version.to_le_bytes());
+                bytes[4..8].copy_from_slice(&header.jump_bytes_prev.to_le_bytes());
+                bytes[8..12].copy_from_slice(&header.jump_bytes_next.to_le_bytes());
+                bytes[12..16].copy_from_slice(&header.reserved.to_le_bytes());
+                Ok(bytes.to_vec())
+            }
+        }
+    }
+
+    pub fn deserialize(data: &[u8]) -> Result<Self, LedgerError> {
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(data);
+        let block_version = u32::from_le_bytes(bytes[0..4].try_into()?);
+        match block_version {
+            0 => Err(LedgerError::BlockEmpty),
+            1 => Ok(LedgerBlockHeader::V1(LedgerBlockHeaderV1 {
+                block_version,
+                jump_bytes_prev: i32::from_le_bytes(bytes[4..8].try_into()?),
+                jump_bytes_next: u32::from_le_bytes(bytes[8..12].try_into()?),
+                reserved: u32::from_le_bytes(bytes[12..16].try_into()?),
+            })),
+            _ => Err(LedgerError::BlockCorrupted(format!(
+                "Unsupported block version: {}",
+                block_version
+            ))),
+        }
+    }
+}
+
+impl std::fmt::Display for LedgerBlockHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            LedgerBlockHeader::V1(header) => write!(f, "{}", header),
+        }
+    }
+}
+
+impl std::fmt::Display for LedgerBlockHeaderV1 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "block_version: {}, jump_bytes_prev: {}, jump_bytes_next: {}",
+            self.block_version, self.jump_bytes_prev, self.jump_bytes_next
+        )
+    }
+}
+
 #[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq, Eq, Debug)]
 pub struct LedgerBlockV1 {
     entries: Vec<LedgerEntry>,
-    offset: u64,
-    offset_next: Option<u64>,
     timestamp: u64,
     parent_hash: Vec<u8>,
 }
@@ -98,17 +189,9 @@ pub enum LedgerBlock {
 }
 
 impl LedgerBlock {
-    pub fn new(
-        entries: Vec<LedgerEntry>,
-        offset: u64,
-        offset_next: Option<u64>,
-        timestamp: u64,
-        parent_hash: Vec<u8>,
-    ) -> Self {
+    pub fn new(entries: Vec<LedgerEntry>, timestamp: u64, parent_hash: Vec<u8>) -> Self {
         LedgerBlock::V1(LedgerBlockV1 {
             entries,
-            offset,
-            offset_next,
             timestamp,
             parent_hash,
         })
@@ -132,24 +215,6 @@ impl LedgerBlock {
         }
     }
 
-    pub fn offset(&self) -> u64 {
-        match self {
-            LedgerBlock::V1(block) => block.offset,
-        }
-    }
-
-    pub fn offset_next(&self) -> Option<u64> {
-        match self {
-            LedgerBlock::V1(block) => block.offset_next,
-        }
-    }
-
-    pub fn offset_next_set(&mut self, value: Option<u64>) {
-        match self {
-            LedgerBlock::V1(block) => block.offset_next = value,
-        }
-    }
-
     pub fn timestamp(&self) -> u64 {
         match self {
             LedgerBlock::V1(block) => block.timestamp,
@@ -165,16 +230,14 @@ impl LedgerBlock {
 
 impl std::fmt::Display for LedgerBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
+        writeln!(
             f,
-            "[{}] ~-=-~-=-~-=-~ Ledger block at offsets 0x{:x} .. {:x?} parent_hash {}",
+            "~-=-~-=-~-=-~ Ledger block with timestamp [{}] parent_hash {}  ~-=-~-=-~-=-~",
             self.timestamp(),
-            self.offset(),
-            self.offset_next(),
             hex::encode(self.parent_hash())
         )?;
         for entry in self.entries() {
-            write!(f, "\n[{}] {}", self.timestamp(), entry)?
+            writeln!(f, "{}", entry)?
         }
         Ok(())
     }

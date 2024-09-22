@@ -63,6 +63,7 @@
 pub mod platform_specific_wasm32;
 #[cfg(target_arch = "wasm32")]
 use ic_cdk::println;
+use ledger_entry::LedgerBlockHeader;
 #[cfg(target_arch = "wasm32")]
 pub use platform_specific_wasm32 as platform_specific;
 
@@ -95,12 +96,16 @@ pub type AHashSet<K> = HashSet<K, BuildHasherDefault<ahash::AHasher>>;
 pub struct MetadataV1 {
     /// The number of blocks in the ledger so far.
     num_blocks: usize,
+    /// The offset in the persistent storage where the previous-to-tip block was written.
+    prev_block_start_pos: Option<u64>,
     /// The chain hash of the entire ledger.
-    last_block_chain_hash: Vec<u8>,
+    tip_block_chain_hash: Vec<u8>,
     /// The timestamp of the last block
-    last_block_timestamp_ns: u64,
+    tip_block_timestamp_ns: u64,
+    /// The offset in the persistent storage where the tip (last completed) block is written.
+    tip_block_start_pos: Option<u64>,
     /// The offset in the persistent storage where the next block will be written.
-    next_block_write_position: u64,
+    next_block_start_pos: u64,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug)]
@@ -110,15 +115,15 @@ pub enum Metadata {
 
 impl Default for Metadata {
     fn default() -> Self {
-        debug!(
-            "next_write_position: 0x{:0x}",
-            partition_table::get_data_partition().start_lba
-        );
+        let next_block_start_pos = partition_table::get_data_partition().start_lba;
+        debug!("next_block_start_pos: 0x{:0x}", next_block_start_pos);
         Metadata::V1(MetadataV1 {
             num_blocks: 0,
-            last_block_chain_hash: Vec::new(),
-            last_block_timestamp_ns: 0,
-            next_block_write_position: partition_table::get_data_partition().start_lba,
+            prev_block_start_pos: None,
+            tip_block_chain_hash: Vec::new(),
+            tip_block_timestamp_ns: 0,
+            tip_block_start_pos: Some(next_block_start_pos),
+            next_block_start_pos,
         })
     }
 }
@@ -138,21 +143,33 @@ impl Metadata {
         }
     }
 
-    pub fn last_block_chain_hash(&self) -> &[u8] {
+    pub fn prev_block_start_pos(&self) -> Option<u64> {
         match self {
-            Metadata::V1(metadata) => metadata.last_block_chain_hash.as_slice(),
+            Metadata::V1(metadata) => metadata.prev_block_start_pos,
         }
     }
 
-    pub fn last_block_timestamp_ns(&self) -> u64 {
+    pub fn tip_block_chain_hash(&self) -> &[u8] {
         match self {
-            Metadata::V1(metadata) => metadata.last_block_timestamp_ns,
+            Metadata::V1(metadata) => metadata.tip_block_chain_hash.as_slice(),
         }
     }
 
-    pub fn next_block_write_position(&self) -> u64 {
+    pub fn tip_block_timestamp_ns(&self) -> u64 {
         match self {
-            Metadata::V1(metadata) => metadata.next_block_write_position,
+            Metadata::V1(metadata) => metadata.tip_block_timestamp_ns,
+        }
+    }
+
+    pub fn tip_block_start_pos(&self) -> Option<u64> {
+        match self {
+            Metadata::V1(metadata) => metadata.tip_block_start_pos,
+        }
+    }
+
+    pub fn next_block_start_pos(&self) -> u64 {
+        match self {
+            Metadata::V1(metadata) => metadata.next_block_start_pos,
         }
     }
 
@@ -160,27 +177,29 @@ impl Metadata {
         &mut self,
         new_chain_hash: &[u8],
         block_timestamp_ns: u64,
-        next_block_write_position: u64,
+        next_block_start_pos: u64,
     ) {
         match self {
             Metadata::V1(metadata) => {
                 metadata.num_blocks += 1;
-                metadata.last_block_chain_hash = new_chain_hash.to_vec();
-                metadata.last_block_timestamp_ns = block_timestamp_ns;
-                metadata.next_block_write_position = next_block_write_position;
+                metadata.prev_block_start_pos = metadata.tip_block_start_pos;
+                metadata.tip_block_chain_hash = new_chain_hash.to_vec();
+                metadata.tip_block_timestamp_ns = block_timestamp_ns;
+                metadata.tip_block_start_pos = Some(metadata.next_block_start_pos);
+                metadata.next_block_start_pos = next_block_start_pos;
             }
         }
     }
 
     fn get_last_block_chain_hash(&self) -> &[u8] {
         match self {
-            Metadata::V1(metadata) => metadata.last_block_chain_hash.as_slice(),
+            Metadata::V1(metadata) => metadata.tip_block_chain_hash.as_slice(),
         }
     }
 
     fn get_last_block_timestamp_ns(&self) -> u64 {
         match self {
-            Metadata::V1(metadata) => metadata.last_block_timestamp_ns,
+            Metadata::V1(metadata) => metadata.tip_block_timestamp_ns,
         }
     }
 }
@@ -261,14 +280,7 @@ impl LedgerMap {
             }
             let block_timestamp = (self.current_timestamp_nanos)();
             let parent_hash = self.metadata.borrow().get_last_block_chain_hash().to_vec();
-            let write_offset = self.metadata.borrow().next_block_write_position();
-            let block = LedgerBlock::new(
-                block_entries,
-                write_offset,
-                None,
-                block_timestamp,
-                parent_hash,
-            );
+            let block = LedgerBlock::new(block_entries, block_timestamp, parent_hash);
             self._persist_block(block)?;
             self.next_block_entries.clear();
         }
@@ -341,8 +353,8 @@ impl LedgerMap {
         let mut expected_parent_hash = Vec::new();
         let mut updates = Vec::new();
         // Step 1: Read all Ledger Blocks
-        for ledger_block in self.iter_raw() {
-            let ledger_block = ledger_block?;
+        for entry in self.iter_raw() {
+            let (block_header, ledger_block) = entry?;
 
             if ledger_block.parent_hash() != expected_parent_hash {
                 return Err(anyhow::format_err!(
@@ -358,10 +370,12 @@ impl LedgerMap {
                 ledger_block.timestamp(),
             )?;
 
+            let next_block_start_pos = self.metadata.borrow().next_block_start_pos()
+                + block_header.jump_bytes_next_block() as u64;
             self.metadata.borrow_mut().update_from_appended_block(
                 &new_chain_hash,
                 ledger_block.timestamp(),
-                ledger_block.offset_next().expect("offset must be set"),
+                next_block_start_pos,
             );
             expected_parent_hash = new_chain_hash;
 
@@ -448,11 +462,13 @@ impl LedgerMap {
         }
     }
 
-    pub fn iter_raw(&self) -> impl Iterator<Item = anyhow::Result<LedgerBlock>> + '_ {
+    pub fn iter_raw(
+        &self,
+    ) -> impl Iterator<Item = anyhow::Result<(LedgerBlockHeader, LedgerBlock)>> + '_ {
         let data_start = partition_table::get_data_partition().start_lba;
         (0..).scan(data_start, |state, _| {
-            let ledger_block = match self._persisted_block_read(*state) {
-                Ok(block) => block,
+            let (block_header, ledger_block) = match self._persisted_block_read(*state) {
+                Ok(decoded) => decoded,
                 Err(LedgerError::BlockEmpty) => return None,
                 Err(LedgerError::BlockCorrupted(err)) => {
                     return Some(Err(anyhow::format_err!(
@@ -467,8 +483,8 @@ impl LedgerMap {
                     )))
                 }
             };
-            *state = ledger_block.offset_next().expect("offset_next must be set");
-            Some(Ok(ledger_block))
+            *state += block_header.jump_bytes_next_block() as u64;
+            Some(Ok((block_header, ledger_block)))
         })
     }
 
@@ -484,8 +500,8 @@ impl LedgerMap {
         self.metadata.borrow().get_last_block_timestamp_ns()
     }
 
-    pub fn get_next_block_write_position(&self) -> u64 {
-        self.metadata.borrow().next_block_write_position()
+    pub fn get_next_block_start_pos(&self) -> u64 {
+        self.metadata.borrow().next_block_start_pos()
     }
 
     pub fn get_next_block_entries_count(&self, label: Option<&str>) -> usize {
@@ -507,25 +523,36 @@ impl LedgerMap {
     }
 
     fn _persist_block(&self, ledger_block: LedgerBlock) -> anyhow::Result<()> {
-        // Prepare entry as serialized bytes
-        let serialized_data = ledger_block.serialize()?;
+        let block_serialized_data = ledger_block.serialize()?;
         info!(
-            "Appending block @timestamp {} with {} bytes: {}",
+            "Appending block @timestamp {} with {} bytes data: {}",
             ledger_block.timestamp(),
-            serialized_data.len(),
-            ledger_block,
+            block_serialized_data.len(),
+            ledger_block
         );
-        // Prepare entry len, as bytes
-        let block_len_bytes: u32 = serialized_data.len() as u32;
-        let serialized_data_len = block_len_bytes.to_le_bytes();
+        // Prepare block header
+        let jump_bytes_prev_block = (self
+            .metadata
+            .borrow()
+            .tip_block_start_pos()
+            .unwrap_or_default() as i64
+            - self.metadata.borrow().next_block_start_pos() as i64)
+            as i32;
+        let jump_bytes_next_block =
+            (block_serialized_data.len() + LedgerBlockHeader::sizeof()) as u32;
+        let serialized_block_header =
+            LedgerBlockHeader::new(jump_bytes_prev_block, jump_bytes_next_block).serialize()?;
 
+        // First persist block header
         persistent_storage_write(
-            self.metadata.borrow().next_block_write_position(),
-            &serialized_data_len,
+            self.metadata.borrow().next_block_start_pos(),
+            &serialized_block_header,
         );
+
+        // Then persist block data
         persistent_storage_write(
-            self.metadata.borrow().next_block_write_position() + serialized_data_len.len() as u64,
-            &serialized_data,
+            self.metadata.borrow().next_block_start_pos() + LedgerBlockHeader::sizeof() as u64,
+            &block_serialized_data,
         );
 
         let new_chain_hash = Self::_compute_block_chain_hash(
@@ -533,50 +560,48 @@ impl LedgerMap {
             ledger_block.entries(),
             ledger_block.timestamp(),
         )?;
-        let next_write_position = self.metadata.borrow().next_block_write_position()
-            + serialized_data_len.len() as u64
-            + serialized_data.len() as u64;
+        let next_block_start_pos =
+            self.metadata.borrow().next_block_start_pos() + jump_bytes_next_block as u64;
         self.metadata.borrow_mut().update_from_appended_block(
             &new_chain_hash,
             ledger_block.timestamp(),
-            next_write_position,
+            next_block_start_pos,
+        );
+
+        // Finally, persist 0u32 to mark the end of the block chain
+        persistent_storage_write(
+            self.metadata.borrow().next_block_start_pos() + jump_bytes_next_block as u64,
+            &[0u8; size_of::<u32>()],
         );
         Ok(())
     }
 
-    fn _persisted_block_read(&self, offset: u64) -> Result<LedgerBlock, LedgerError> {
+    fn _persisted_block_read(
+        &self,
+        offset: u64,
+    ) -> Result<(LedgerBlockHeader, LedgerBlock), LedgerError> {
         // Find out how many bytes we need to read ==> block len in bytes
-        let mut buf = [0u8; std::mem::size_of::<u32>()];
+        let mut buf = [0u8; size_of::<LedgerBlockHeader>()];
         persistent_storage_read(offset, &mut buf)
             .map_err(|e| LedgerError::BlockCorrupted(e.to_string()))?;
-        let block_len: u32 = u32::from_le_bytes(buf);
-        // debug!("offset 0x{:0x} read bytes: {:?}", offset, buf);
-        // debug!("block_len: {}", block_len);
 
-        if block_len == 0 {
-            return Err(LedgerError::BlockEmpty);
-        }
+        let block_header = LedgerBlockHeader::deserialize(buf.as_ref())?;
+        let block_len_bytes = block_header.jump_bytes_next_block();
 
         debug!(
-            "Reading journal block of {} bytes at offset 0x{:0x}",
-            block_len, offset
+            "Reading persisted block of {} bytes at offset 0x{:0x}",
+            block_len_bytes, offset
         );
 
         // Read the block as raw bytes
-        let mut buf = vec![0u8; block_len as usize];
-        persistent_storage_read(offset + std::mem::size_of::<u32>() as u64, &mut buf)
+        let mut buf = vec![0u8; block_len_bytes as usize];
+        persistent_storage_read(offset + LedgerBlockHeader::sizeof() as u64, &mut buf)
             .map_err(|e| LedgerError::Other(e.to_string()))?;
-        match LedgerBlock::deserialize(buf.as_ref())
-            .map_err(|err| LedgerError::BlockCorrupted(err.to_string()))
-        {
-            Ok(mut block) => {
-                block.offset_next_set(Some(
-                    offset + std::mem::size_of::<u32>() as u64 + block_len as u64,
-                ));
-                Ok(block)
-            }
-            Err(err) => Err(err),
-        }
+
+        let block = LedgerBlock::deserialize(buf.as_ref())
+            .map_err(|err| LedgerError::BlockCorrupted(err.to_string()))?;
+
+        Ok((block_header, block))
     }
 
     fn _insert_entry_into_next_block<S: AsRef<str>, K: AsRef<[u8]>, V: AsRef<[u8]>>(
@@ -678,8 +703,6 @@ mod tests {
                 value.clone(),
                 Operation::Upsert,
             )],
-            0,
-            None,
             0,
             vec![],
         );
@@ -939,9 +962,46 @@ mod tests {
             61, 37, 162, 237, 226, 100, 94, 136, 159, 73, 117, 58, 222, 153,
         ];
         assert_eq!(
-            ledger_map.metadata.borrow().last_block_chain_hash(),
+            ledger_map.metadata.borrow().tip_block_chain_hash(),
             expected_chain_hash
         );
         assert_eq!(ledger_map.get_latest_block_hash(), expected_chain_hash);
+    }
+
+    #[test]
+    fn test_ledger_block_offsets() {
+        // Create a new ledger
+        let mut ledger_map = new_temp_ledger(None);
+
+        // Create some dummy entries
+        ledger_map.upsert("label1", b"key1", b"value1").unwrap();
+        ledger_map.commit_block().unwrap();
+        ledger_map.upsert("label1a", b"key2a", b"value2aa").unwrap();
+        ledger_map.commit_block().unwrap();
+        ledger_map
+            .upsert("label1bb", b"key3bbb", b"value3bbbb")
+            .unwrap();
+        ledger_map.commit_block().unwrap();
+
+        let (headers, blocks): (Vec<_>, Vec<_>) = ledger_map.iter_raw().map(|x| x.unwrap()).unzip();
+
+        let header_len_bytes = headers
+            .iter()
+            .map(|x| x.serialize().unwrap().len() as u32)
+            .collect::<Vec<_>>();
+        let blocks_len_bytes = blocks
+            .iter()
+            .map(|x| x.serialize().unwrap().len() as u32)
+            .collect::<Vec<_>>();
+        let blk0_bytes = (header_len_bytes[0] + blocks_len_bytes[0]) as u64;
+        let blk1_bytes = (header_len_bytes[1] + blocks_len_bytes[1]) as u64;
+        let blk2_bytes = (header_len_bytes[2] + blocks_len_bytes[2]) as u64;
+        assert_eq!(headers[0].jump_bytes_prev_block(), 0);
+        assert_eq!(headers[0].jump_bytes_next_block(), blk0_bytes as u32);
+
+        assert_eq!(headers[1].jump_bytes_prev_block(), -(blk0_bytes as i32));
+        assert_eq!(headers[1].jump_bytes_next_block(), blk1_bytes as u32);
+        assert_eq!(headers[2].jump_bytes_prev_block(), -(blk1_bytes as i32));
+        assert_eq!(headers[2].jump_bytes_next_block(), blk2_bytes as u32);
     }
 }
