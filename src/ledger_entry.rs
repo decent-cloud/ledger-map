@@ -111,6 +111,12 @@ impl LedgerBlockHeader {
         size_of::<LedgerBlockHeaderV1>()
     }
 
+    pub fn block_version(&self) -> u32 {
+        match self {
+            LedgerBlockHeader::V1(header) => header.block_version,
+        }
+    }
+
     pub fn jump_bytes_prev_block(&self) -> i32 {
         match self {
             LedgerBlockHeader::V1(header) => header.jump_bytes_prev,
@@ -183,18 +189,13 @@ pub struct LedgerBlockV1 {
     parent_hash: Vec<u8>,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq, Eq, Debug)]
-pub enum LedgerBlock {
-    V1(LedgerBlockV1),
-}
-
-impl LedgerBlock {
+impl LedgerBlockV1 {
     pub fn new(entries: Vec<LedgerEntry>, timestamp: u64, parent_hash: Vec<u8>) -> Self {
-        LedgerBlock::V1(LedgerBlockV1 {
+        LedgerBlockV1 {
             entries,
             timestamp,
             parent_hash,
-        })
+        }
     }
 
     pub fn serialize(&self) -> io::Result<Vec<u8>> {
@@ -208,10 +209,40 @@ impl LedgerBlock {
         let v = borsh::de::from_reader(&mut e)?;
         Ok(v)
     }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LedgerBlock {
+    V1(LedgerBlockV1),
+}
+
+impl LedgerBlock {
+    pub fn new(entries: Vec<LedgerEntry>, timestamp: u64, parent_hash: Vec<u8>) -> Self {
+        LedgerBlock::V1(LedgerBlockV1::new(entries, timestamp, parent_hash))
+    }
 
     pub fn entries(&self) -> &[LedgerEntry] {
         match self {
             LedgerBlock::V1(block) => &block.entries,
+        }
+    }
+
+    pub fn serialize(&self) -> io::Result<Vec<u8>> {
+        match self {
+            LedgerBlock::V1(block) => block.serialize(),
+        }
+    }
+
+    pub fn version(&self) -> u32 {
+        match self {
+            LedgerBlock::V1(_) => 1,
+        }
+    }
+
+    pub fn deserialize(data: &[u8], version: u32) -> anyhow::Result<Self> {
+        match version {
+            1 => Ok(LedgerBlock::V1(LedgerBlockV1::deserialize(data)?)),
+            _ => Err(anyhow::anyhow!("Unsupported block version: {}", version)),
         }
     }
 
@@ -232,7 +263,8 @@ impl std::fmt::Display for LedgerBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         writeln!(
             f,
-            "~-=-~-=-~-=-~ Ledger block with timestamp [{}] parent_hash {}  ~-=-~-=-~-=-~",
+            "~-=-~-=-~-=-~ Ledger block v{} with timestamp [{}] parent_hash {}  ~-=-~-=-~-=-~",
+            self.version(),
             self.timestamp(),
             hex::encode(self.parent_hash())
         )?;

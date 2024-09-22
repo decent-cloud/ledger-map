@@ -598,7 +598,7 @@ impl LedgerMap {
         persistent_storage_read(offset + LedgerBlockHeader::sizeof() as u64, &mut buf)
             .map_err(|e| LedgerError::Other(e.to_string()))?;
 
-        let block = LedgerBlock::deserialize(buf.as_ref())
+        let block = LedgerBlock::deserialize(buf.as_ref(), block_header.block_version())
             .map_err(|err| LedgerError::BlockCorrupted(err.to_string()))?;
 
         Ok((block_header, block))
