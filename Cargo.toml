@@ -14,7 +14,7 @@ name = "ledger_map"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.90"
 ahash = { version = "0.8.11", default-features = false, features = [
     "compile-time-rng",
 ] }
