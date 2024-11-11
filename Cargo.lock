@@ -559,42 +559,15 @@ dependencies = [
 
 [[package]]
 name = "ic-cdk"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd8ecacd682fa05a985253592963306cb9799622d7b1cce4b1edb89c6ec85be1"
-dependencies = [
- "candid",
- "ic-cdk-macros 0.16.0",
- "ic0",
- "serde",
- "serde_bytes",
-]
-
-[[package]]
-name = "ic-cdk"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2abdf9341da9f9f6b451a40609cb69645a05a8e9eb7784c16209f16f2c0f76f"
 dependencies = [
  "candid",
- "ic-cdk-macros 0.17.0",
+ "ic-cdk-macros",
  "ic0",
  "serde",
  "serde_bytes",
-]
-
-[[package]]
-name = "ic-cdk-macros"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d4d857135deef20cc7ea8f3869a30cd9cfeb1392b3a81043790b2cd82adc3e0"
-dependencies = [
- "candid",
- "proc-macro2",
- "quote",
- "serde",
- "serde_tokenstream",
- "syn 2.0.85",
 ]
 
 [[package]]
@@ -618,7 +591,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb8fd812a9e26f6aa00594546f8fbf4d4853f39c3ba794c8ff11ecf86fd3c9e4"
 dependencies = [
  "futures",
- "ic-cdk 0.17.0",
+ "ic-cdk",
  "ic0",
  "serde",
  "serde_bytes",
@@ -687,7 +660,7 @@ dependencies = [
  "fs-err",
  "hex",
  "ic-canister-log",
- "ic-cdk 0.16.0",
+ "ic-cdk",
  "ic-cdk-timers",
  "indexmap",
  "lazy_static",
@@ -991,7 +964,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1032,7 +1005,7 @@ dependencies = [
  "fastrand",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1137,15 +1110,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
