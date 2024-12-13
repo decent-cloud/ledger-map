@@ -653,6 +653,12 @@ impl From<LedgerError> for anyhow::Error {
     }
 }
 
+impl From<LedgerError> for String {
+    fn from(error: LedgerError) -> Self {
+        error.to_string()
+    }
+}
+
 impl std::fmt::Display for LedgerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
