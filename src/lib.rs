@@ -238,6 +238,11 @@ impl LedgerMap {
         Self::new(labels_to_index)
     }
 
+    #[cfg(target_arch = "x86_64")]
+    pub fn get_file_path(&self) -> Option<std::path::PathBuf> {
+        platform_specific::get_backing_file_path()
+    }
+
     #[cfg(test)]
     fn with_timestamp_fn(self, get_timestamp_nanos: fn() -> u64) -> Self {
         LedgerMap {

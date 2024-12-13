@@ -147,6 +147,15 @@ pub fn set_backing_file(file_path: Option<PathBuf>) -> Result<(), String> {
     })
 }
 
+pub fn get_backing_file_path() -> Option<PathBuf> {
+    BACKING_FILE.with(|backing_file| {
+        backing_file
+            .borrow()
+            .as_ref()
+            .map(|bf| bf.file_path.clone())
+    })
+}
+
 pub fn get_or_create_backing_file() -> Result<BackingFile, String> {
     BACKING_FILE.with(|backing_file| {
         let mut binding = backing_file.borrow_mut();
